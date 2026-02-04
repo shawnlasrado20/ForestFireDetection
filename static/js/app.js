@@ -7,6 +7,20 @@ let fireData = [];
 let fireDataByDate = {}; // Fires grouped by date
 let allMarkers = {}; // All markers by date for reuse
 
+// Prediction layers
+let spreadLayer;
+let riskHeatmapLayer;
+let trackingData = null;
+let spreadData = null;
+let forecastData = null;
+
+// Prediction state
+let predictionState = {
+    showSpread: false,
+    showForecast: false,
+    showTracking: false
+};
+
 // Timeline state
 let timelineData = {
     dates: [],
@@ -23,6 +37,13 @@ const RISK_COLORS = {
     'Low': '#22c55e'
 };
 
+// Fire lifespan colors
+const LIFESPAN_COLORS = {
+    'new': '#ecf95a',      // Bright yellow
+    'persistent': '#f97316', // Orange
+    'longterm': '#ef4444'   // Red
+};
+
 // Initialize the map
 function initMap() {
     // Create map centered on a global view
@@ -36,6 +57,10 @@ function initMap() {
     
     // Create a feature group for markers (supports getBounds)
     markersLayer = L.featureGroup().addTo(map);
+    
+    // Create prediction layers
+    spreadLayer = L.layerGroup().addTo(map);
+    riskHeatmapLayer = L.layerGroup().addTo(map);
     
     console.log('Map initialized');
 }
@@ -75,16 +100,17 @@ async function analyzeFireRisk() {
         // Initialize timeline
         if (result.timeline && result.timeline.dates) {
             timelineData.dates = result.timeline.dates;
-            timelineData.currentDateIndex = 0;
+            // Start at MOST RECENT date (last index) instead of first
+            timelineData.currentDateIndex = result.timeline.dates.length - 1;
             initializeTimeline(result.timeline);
         }
         
         // Update statistics
         updateStatistics(result);
         
-        // Start timeline at first date instead of showing all data
+        // Start timeline at MOST RECENT date (show current fire state)
         if (timelineData.dates.length > 0) {
-            updateMapForDate(0);
+            updateMapForDate(timelineData.dates.length - 1);
         } else {
             // Fallback: Plot all data if no timeline
             plotFireData(fireData);
@@ -131,18 +157,19 @@ function initializeTimeline(timeline) {
         timelineControls.classList.remove('hidden');
     }
     
-    // Set slider range
+    // Set slider range and position at END (most recent)
     if (timelineSlider) {
         timelineSlider.max = timeline.dates.length - 1;
-        timelineSlider.value = 0;
+        timelineSlider.value = timeline.dates.length - 1;  // Start at end
     }
     
-    // Display initial date
+    // Display MOST RECENT date initially
     if (currentDateDisplay && timeline.dates.length > 0) {
-        currentDateDisplay.textContent = formatDate(timeline.dates[0]);
+        const lastDate = timeline.dates[timeline.dates.length - 1];
+        currentDateDisplay.textContent = formatDate(lastDate);
     }
     
-    console.log(`Timeline initialized: ${timeline.start_date} to ${timeline.end_date}`);
+    console.log(`Timeline initialized: ${timeline.start_date} to ${timeline.end_date} (starting at most recent)`);
 }
 
 // Format date for display (YYYY-MM-DD to readable format)
@@ -411,6 +438,252 @@ function changeSpeed(speed) {
 
 // ============= END TIMELINE FUNCTIONS =============
 
+// ============= PREDICTION FUNCTIONS =============
+
+// Fetch fire tracking data
+async function loadFireTracking() {
+    try {
+        const response = await fetch('/predict/tracking');
+        const result = await response.json();
+        
+        if (result.success) {
+            trackingData = result.tracking;
+            console.log(`Loaded tracking for ${trackingData.total_tracked} fires`);
+            updateTrackingStats();
+            return trackingData;
+        }
+    } catch (error) {
+        console.error('Error loading fire tracking:', error);
+    }
+    return null;
+}
+
+// Fetch spread predictions
+async function loadSpreadPredictions() {
+    try {
+        const response = await fetch('/predict/spread');
+        const result = await response.json();
+        
+        if (result.success) {
+            spreadData = result.spread;
+            console.log(`Loaded ${spreadData.total_predictions} spread predictions`);
+            return spreadData;
+        }
+    } catch (error) {
+        console.error('Error loading spread predictions:', error);
+    }
+    return null;
+}
+
+// Fetch risk forecast (REAL FUTURE PREDICTION for Feb 2026)
+async function loadRiskForecast() {
+    try {
+        console.log('Loading FUTURE forecast for Feb 2026...');
+        const response = await fetch('/predict/future-forecast');  // Use new endpoint
+        const result = await response.json();
+        
+        if (result.success) {
+            forecastData = result.forecast;
+            console.log(`Loaded ${forecastData.total_zones} predicted fire zones for ${forecastData.target_date}`);
+            console.log(`Based on data from: ${forecastData.based_on_dates}`);
+            return forecastData;
+        }
+    } catch (error) {
+        console.error('Error loading future forecast:', error);
+    }
+    return null;
+}
+
+// Update tracking statistics display
+function updateTrackingStats() {
+    if (!trackingData) return;
+    
+    const trackedFiresEl = document.getElementById('trackedFires');
+    const growingFiresEl = document.getElementById('growingFires');
+    const riskZonesEl = document.getElementById('riskZones');
+    
+    if (trackedFiresEl) trackedFiresEl.textContent = trackingData.total_tracked;
+    if (growingFiresEl) growingFiresEl.textContent = trackingData.growing;
+    if (riskZonesEl && forecastData) riskZonesEl.textContent = forecastData.high_risk_count || 0;
+}
+
+// Visualize fire spread predictions
+function visualizeSpread() {
+    spreadLayer.clearLayers();
+    
+    if (!spreadData || !predictionState.showSpread) return;
+    
+    spreadData.predictions.forEach(pred => {
+        const [lat, lon] = pred.current_location;
+        const [predLat, predLon] = pred.predicted_location;
+        
+        // Draw arrow from current to predicted location
+        const arrowPoints = [
+            [lat, lon],
+            [predLat, predLon]
+        ];
+        
+        // Color by confidence
+        const color = pred.confidence > 0.6 ? '#22c55e' : pred.confidence > 0.4 ? '#f97316' : '#ef4444';
+        
+        // Draw line
+        const arrow = L.polyline(arrowPoints, {
+            color: color,
+            weight: 3,
+            opacity: 0.8,
+            dashArray: '10, 5'
+        }).addTo(spreadLayer);
+        
+        // Add arrowhead using a marker
+        const arrowIcon = L.divIcon({
+            html: `<div style="color: ${color}; font-size: 24px; transform: rotate(${pred.direction_degrees}deg);">➤</div>`,
+            className: 'arrow-icon',
+            iconSize: [24, 24],
+            iconAnchor: [12, 12]
+        });
+        
+        L.marker([predLat, predLon], { icon: arrowIcon }).addTo(spreadLayer);
+        
+        // Add prediction circle (uncertainty)
+        L.circle([predLat, predLon], {
+            radius: pred.uncertainty_radius_km * 1000,
+            color: color,
+            fillColor: color,
+            fillOpacity: 0.1,
+            weight: 1
+        }).addTo(spreadLayer);
+        
+        // Popup with prediction info
+        const popupContent = `
+            <div class="popup-content">
+                <h4>Fire Spread Prediction</h4>
+                <p><strong>Direction:</strong> ${pred.direction}</p>
+                <p><strong>Velocity:</strong> ${pred.velocity_km_day} km/day</p>
+                <p><strong>Confidence:</strong> ${(pred.confidence * 100).toFixed(0)}%</p>
+            </div>
+        `;
+        arrow.bindPopup(popupContent);
+    });
+    
+    console.log(`Visualized ${spreadData.predictions.length} spread predictions`);
+}
+
+// Visualize risk forecast heatmap (REAL FUTURE PREDICTION)
+function visualizeRiskForecast() {
+    riskHeatmapLayer.clearLayers();
+    
+    if (!forecastData || !predictionState.showForecast) return;
+    
+    forecastData.risk_zones.forEach(zone => {
+        const [lat, lon] = zone.center;
+        const [[minLat, minLon], [maxLat, maxLon]] = zone.bounds;
+        
+        // Color by risk level
+        const colors = {
+            'high': '#ef4444',
+            'medium': '#f97316',
+            'low': '#fbbf24'
+        };
+        const color = colors[zone.risk_level];
+        
+        // Draw risk zone rectangle
+        const bounds = [[minLat, minLon], [maxLat, maxLon]];
+        const rect = L.rectangle(bounds, {
+            color: color,
+            fillColor: color,
+            fillOpacity: 0.35,
+            weight: 2,
+            opacity: 0.9,
+            dashArray: '5, 5'  // Dashed to show it's a prediction
+        }).addTo(riskHeatmapLayer);
+        
+        // Popup with FUTURE forecast info
+        const popupContent = `
+            <div class="popup-content">
+                <h4>🔮 Future Fire Prediction</h4>
+                <p><strong>Target Date:</strong> ${forecastData.target_date || 'Feb 5, 2026'}</p>
+                <p><strong>Risk Level:</strong> <span style="color: ${color}">${zone.risk_level.toUpperCase()}</span></p>
+                <p><strong>Probability:</strong> ${(zone.probability * 100).toFixed(0)}%</p>
+                <p><strong>Risk Score:</strong> ${zone.risk_score}/100</p>
+                <p><strong>Based on:</strong> ${forecastData.based_on_dates || 'Recent data'}</p>
+            </div>
+        `;
+        rect.bindPopup(popupContent);
+    });
+    
+    console.log(`Visualized ${forecastData.risk_zones.length} FUTURE risk predictions for ${forecastData.target_date}`);
+}
+
+// Toggle spread visualization
+async function toggleSpreadPredictions() {
+    predictionState.showSpread = !predictionState.showSpread;
+    
+    const checkbox = document.getElementById('showSpread');
+    if (checkbox) checkbox.checked = predictionState.showSpread;
+    
+    if (predictionState.showSpread && !spreadData) {
+        await loadSpreadPredictions();
+    }
+    
+    visualizeSpread();
+}
+
+// Toggle risk forecast visualization
+async function toggleRiskForecast() {
+    predictionState.showForecast = !predictionState.showForecast;
+    
+    const checkbox = document.getElementById('showForecast');
+    if (checkbox) checkbox.checked = predictionState.showForecast;
+    
+    if (predictionState.showForecast && !forecastData) {
+        await loadRiskForecast();
+    }
+    
+    visualizeRiskForecast();
+}
+
+// Update all predictions
+async function updatePredictions() {
+    const updateBtn = document.getElementById('updatePredictions');
+    if (updateBtn) {
+        updateBtn.disabled = true;
+        updateBtn.textContent = 'Updating...';
+    }
+    
+    try {
+        // Load all prediction data with timeout
+        const loadPromise = Promise.all([
+            loadFireTracking(),
+            loadSpreadPredictions(),
+            loadRiskForecast()
+        ]);
+        
+        // Add 30 second timeout (ML training takes time)
+        const timeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Timeout')), 30000)
+        );
+        
+        await Promise.race([loadPromise, timeoutPromise]);
+        
+        // Update visualizations if enabled
+        if (predictionState.showSpread) visualizeSpread();
+        if (predictionState.showForecast) visualizeRiskForecast();
+        
+        console.log('Predictions updated successfully');
+    } catch (error) {
+        console.error('Error updating predictions:', error);
+        alert('Prediction update timed out. Try toggling checkboxes individually.');
+    } finally {
+        // Always reset button state
+        if (updateBtn) {
+            updateBtn.disabled = false;
+            updateBtn.textContent = 'Update Predictions';
+        }
+    }
+}
+
+// ============= END PREDICTION FUNCTIONS =============
+
 // Initialize application when DOM is ready
 document.addEventListener('DOMContentLoaded', function() {
     console.log('Forest Fire Risk Detection System - Initializing...');
@@ -440,6 +713,22 @@ document.addEventListener('DOMContentLoaded', function() {
         speedControl.addEventListener('change', (e) => {
             changeSpeed(e.target.value);
         });
+    }
+    
+    // Add prediction control event listeners
+    const showSpreadCheckbox = document.getElementById('showSpread');
+    if (showSpreadCheckbox) {
+        showSpreadCheckbox.addEventListener('change', toggleSpreadPredictions);
+    }
+    
+    const showForecastCheckbox = document.getElementById('showForecast');
+    if (showForecastCheckbox) {
+        showForecastCheckbox.addEventListener('change', toggleRiskForecast);
+    }
+    
+    const updatePredictionsBtn = document.getElementById('updatePredictions');
+    if (updatePredictionsBtn) {
+        updatePredictionsBtn.addEventListener('click', updatePredictions);
     }
     
     console.log('Application ready');

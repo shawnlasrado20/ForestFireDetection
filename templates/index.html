@@ -94,6 +94,44 @@
                 </div>
             </div>
             
+            <!-- Prediction Panel -->
+            <div id="predictionPanel" class="prediction-panel">
+                <h3>🔮 Predictive Analysis</h3>
+                
+                <!-- Prediction Controls -->
+                <div class="prediction-controls">
+                    <label class="prediction-toggle">
+                        <input type="checkbox" id="showSpread">
+                        <span>Show Fire Spread Direction</span>
+                    </label>
+                    
+                    <label class="prediction-toggle">
+                        <input type="checkbox" id="showForecast">
+                        <span>Show Future Fire Forecast (Feb 5, 2026)</span>
+                    </label>
+                    
+                    <button id="updatePredictions" class="prediction-btn">
+                        Update Predictions
+                    </button>
+                </div>
+                
+                <!-- Prediction Stats -->
+                <div class="prediction-stats">
+                    <div class="pred-stat-item">
+                        <span class="pred-stat-label">Active Fires Tracked:</span>
+                        <span id="trackedFires" class="pred-stat-value">0</span>
+                    </div>
+                    <div class="pred-stat-item">
+                        <span class="pred-stat-label">Fires Growing:</span>
+                        <span id="growingFires" class="pred-stat-value">0</span>
+                    </div>
+                    <div class="pred-stat-item">
+                        <span class="pred-stat-label">High-Risk Zones:</span>
+                        <span id="riskZones" class="pred-stat-value">0</span>
+                    </div>
+                </div>
+            </div>
+            
             <!-- Legend -->
             <div class="legend">
                 <h3>Risk Level Legend</h3>
