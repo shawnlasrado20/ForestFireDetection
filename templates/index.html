@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Forest Fire Risk Detection System - NASA FIRMS Data</title>
+    
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+</head>
+<body>
+    <div class="container">
+        <!-- Sidebar -->
+        <div class="sidebar">
+            <div class="header">
+                <h1>🔥 Forest Fire Risk Detection</h1>
+                <p class="subtitle">NASA FIRMS MODIS Data Analysis</p>
+            </div>
+            
+            <!-- Control Panel -->
+            <div class="control-panel">
+                <button id="analyzeBtn" class="analyze-btn">
+                    <span class="btn-icon">🛰️</span>
+                    Analyze Fire Risk
+                </button>
+                
+                <div id="loading" class="loading hidden">
+                    <div class="spinner"></div>
+                    <p>Processing satellite data...</p>
+                </div>
+            </div>
+            
+            <!-- Statistics -->
+            <div id="statistics" class="statistics hidden">
+                <h3>Statistics</h3>
+                <div class="stat-item">
+                    <span class="stat-label">Total Points:</span>
+                    <span id="totalPoints" class="stat-value">-</span>
+                </div>
+                <div class="stat-item high-risk">
+                    <span class="stat-label">High Risk:</span>
+                    <span id="highRisk" class="stat-value">-</span>
+                </div>
+                <div class="stat-item medium-risk">
+                    <span class="stat-label">Medium Risk:</span>
+                    <span id="mediumRisk" class="stat-value">-</span>
+                </div>
+                <div class="stat-item low-risk">
+                    <span class="stat-label">Low Risk:</span>
+                    <span id="lowRisk" class="stat-value">-</span>
+                </div>
+            </div>
+            
+            <!-- Timeline Controls -->
+            <div id="timelineControls" class="timeline-controls hidden">
+                <h3>🕐 Fire Timeline</h3>
+                
+                <!-- Current Date Display -->
+                <div id="currentDateDisplay" class="current-date-display">
+                    Nov 1, 2024
+                </div>
+                
+                <!-- Play/Pause Button -->
+                <button id="playPauseBtn" class="timeline-btn">
+                    ▶ Play
+                </button>
+                
+                <!-- Timeline Slider -->
+                <div class="slider-container">
+                    <input type="range" id="timelineSlider" min="0" max="73" value="0" class="timeline-slider">
+                </div>
+                
+                <!-- Date Range Labels -->
+                <div class="date-labels">
+                    <span class="date-start">Start</span>
+                    <span class="date-end">End</span>
+                </div>
+                
+                <!-- Speed Control -->
+                <div class="speed-control">
+                    <label for="speedControl">Speed:</label>
+                    <select id="speedControl" class="speed-select">
+                        <option value="1000">0.5x</option>
+                        <option value="500" selected>1x</option>
+                        <option value="250">2x</option>
+                        <option value="100">5x</option>
+                    </select>
+                </div>
+            </div>
+            
+            <!-- Legend -->
+            <div class="legend">
+                <h3>Risk Level Legend</h3>
+                <div class="legend-item">
+                    <span class="legend-color high"></span>
+                    <span class="legend-label">High Risk (&gt;330K)</span>
+                </div>
+                <div class="legend-item">
+                    <span class="legend-color medium"></span>
+                    <span class="legend-label">Medium Risk (300-330K)</span>
+                </div>
+                <div class="legend-item">
+                    <span class="legend-color low"></span>
+                    <span class="legend-label">Low Risk (&lt;300K)</span>
+                </div>
+            </div>
+            
+            <!-- Info -->
+            <div class="info">
+                <h3>About</h3>
+                <p>This system analyzes real-time forest fire data from NASA's Fire Information for Resource Management System (FIRMS) using MODIS satellite data.</p>
+                <p><strong>Brightness</strong> values represent surface temperature in Kelvin, used to assess fire risk levels.</p>
+            </div>
+        </div>
+        
+        <!-- Map Container -->
+        <div class="map-container">
+            <div id="map"></div>
+            <div id="mapOverlay" class="map-overlay">
+                <p>Click "Analyze Fire Risk" to load data</p>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Custom JavaScript -->
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>
