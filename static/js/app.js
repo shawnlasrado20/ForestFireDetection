@@ -30,6 +30,9 @@ let timelineData = {
     intervalId: null
 };
 
+// Live data state
+let isLiveMode = false;
+
 // Color mapping for risk levels
 const RISK_COLORS = {
     'High': '#ef4444',
@@ -78,8 +81,10 @@ async function analyzeFireRisk() {
         loading.classList.remove('hidden');
         statistics.classList.add('hidden');
         
-        // Fetch data from backend
-        const response = await fetch('/analyze');
+        // Fetch data from backend (use live endpoint if enabled)
+        const endpoint = isLiveMode ? '/analyze/live' : '/analyze';
+        console.log(`Fetching data from ${endpoint}...`);
+        const response = await fetch(endpoint);
         
         if (!response.ok) {
             throw new Error('Failed to fetch data from server');
@@ -578,11 +583,11 @@ function visualizeRiskForecast() {
         const [lat, lon] = zone.center;
         const [[minLat, minLon], [maxLat, maxLon]] = zone.bounds;
         
-        // Color by risk level
+        // Color by risk level - PURPLE for predictions (distinct from actual fires)
         const colors = {
-            'high': '#ef4444',
-            'medium': '#f97316',
-            'low': '#fbbf24'
+            'high': '#a855f7',    // Bright purple
+            'medium': '#c084fc',  // Medium purple
+            'low': '#e9d5ff'      // Light purple
         };
         const color = colors[zone.risk_level];
         
@@ -591,10 +596,10 @@ function visualizeRiskForecast() {
         const rect = L.rectangle(bounds, {
             color: color,
             fillColor: color,
-            fillOpacity: 0.35,
-            weight: 2,
-            opacity: 0.9,
-            dashArray: '5, 5'  // Dashed to show it's a prediction
+            fillOpacity: 0.4,  // Slightly more visible purple
+            weight: 2.5,
+            opacity: 1,
+            dashArray: '8, 4'  // Dashed to show it's a prediction
         }).addTo(riskHeatmapLayer);
         
         // Popup with FUTURE forecast info
@@ -635,8 +640,17 @@ async function toggleRiskForecast() {
     const checkbox = document.getElementById('showForecast');
     if (checkbox) checkbox.checked = predictionState.showForecast;
     
-    if (predictionState.showForecast && !forecastData) {
-        await loadRiskForecast();
+    // When enabling forecast, jump to most recent date to show current fires + predictions
+    if (predictionState.showForecast) {
+        if (timelineData.dates && timelineData.dates.length > 0) {
+            const mostRecentIndex = timelineData.dates.length - 1;
+            goToDate(mostRecentIndex);
+            console.log('Jumped to most recent date for forecast visualization');
+        }
+        
+        if (!forecastData) {
+            await loadRiskForecast();
+        }
     }
     
     visualizeRiskForecast();
@@ -648,6 +662,13 @@ async function updatePredictions() {
     if (updateBtn) {
         updateBtn.disabled = true;
         updateBtn.textContent = 'Updating...';
+    }
+    
+    // Jump to most recent date for predictions
+    if (timelineData.dates && timelineData.dates.length > 0) {
+        const mostRecentIndex = timelineData.dates.length - 1;
+        goToDate(mostRecentIndex);
+        console.log('Jumped to most recent date for predictions');
     }
     
     try {
@@ -680,6 +701,51 @@ async function updatePredictions() {
             updateBtn.textContent = 'Update Predictions';
         }
     }
+}
+
+// Toggle between live and historical data
+function toggleLiveData() {
+    isLiveMode = !isLiveMode;
+    
+    const dataSourceLabel = document.getElementById('dataSourceLabel');
+    const liveIndicator = document.getElementById('liveIndicator');
+    const liveDate = document.getElementById('liveDate');
+    const timelineControls = document.getElementById('timelineControls');
+    
+    if (isLiveMode) {
+        // Switch to live mode
+        dataSourceLabel.textContent = '🔴 Live Data';
+        liveIndicator.classList.remove('hidden');
+        
+        // Set today's date
+        const today = new Date().toLocaleDateString('en-US', { 
+            year: 'numeric', 
+            month: 'short', 
+            day: 'numeric' 
+        });
+        liveDate.textContent = today;
+        
+        // Hide timeline (live data doesn't have timeline)
+        if (timelineControls) {
+            timelineControls.classList.add('hidden');
+        }
+        
+        console.log('Switched to LIVE data mode');
+    } else {
+        // Switch to historical mode
+        dataSourceLabel.textContent = '📊 Historical Data';
+        liveIndicator.classList.add('hidden');
+        
+        // Show timeline
+        if (timelineControls && timelineData.dates.length > 0) {
+            timelineControls.classList.remove('hidden');
+        }
+        
+        console.log('Switched to HISTORICAL data mode');
+    }
+    
+    // Re-analyze with new data source
+    analyzeFireRisk();
 }
 
 // ============= END PREDICTION FUNCTIONS =============
@@ -729,6 +795,12 @@ document.addEventListener('DOMContentLoaded', function() {
     const updatePredictionsBtn = document.getElementById('updatePredictions');
     if (updatePredictionsBtn) {
         updatePredictionsBtn.addEventListener('click', updatePredictions);
+    }
+    
+    // Add live data toggle event listener
+    const liveDataToggle = document.getElementById('liveDataToggle');
+    if (liveDataToggle) {
+        liveDataToggle.addEventListener('change', toggleLiveData);
     }
     
     console.log('Application ready');

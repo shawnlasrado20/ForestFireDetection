@@ -30,6 +30,20 @@
                     Analyze Fire Risk
                 </button>
                 
+                <!-- Data Source Toggle -->
+                <div class="data-source-toggle">
+                    <label class="toggle-label">
+                        <input type="checkbox" id="liveDataToggle" class="toggle-checkbox">
+                        <span class="toggle-switch"></span>
+                        <span class="toggle-text">
+                            <span id="dataSourceLabel">📊 Historical Data</span>
+                        </span>
+                    </label>
+                    <div id="liveIndicator" class="live-indicator hidden">
+                        🔴 LIVE - <span id="liveDate">Today</span>
+                    </div>
+                </div>
+                
                 <div id="loading" class="loading hidden">
                     <div class="spinner"></div>
                     <p>Processing satellite data...</p>

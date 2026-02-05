@@ -8,6 +8,7 @@ from flask import Flask, render_template, jsonify
 import pandas as pd
 import numpy as np
 import os
+import requests
 from datetime import datetime, timedelta
 from sklearn.cluster import DBSCAN
 from sklearn.ensemble import RandomForestClassifier
@@ -21,8 +22,15 @@ CSV_FILE = 'fire_nrt_M-C61_565334.csv'
 MAX_ROWS = 10000  # Load more rows to ensure we get multiple dates
 SAMPLE_SIZE = 5000  # Final sample size after date-based sampling
 
+# NASA FIRMS API Configuration
+NASA_API_KEY = '09986e5ce9ced030e29e806aa0a9e6d7'
+NASA_API_URL = 'https://firms.modaps.eosdis.nasa.gov/api/area/csv/{map_key}/{source}/{area}/{day_range}/{date}'
+
 # Cache for loaded data
 _data_cache = None
+_live_data_cache = None
+_live_data_timestamp = None
+LIVE_CACHE_DURATION = 3600  # Cache live data for 1 hour (3600 seconds)
 
 # Prediction configuration
 CLUSTER_DISTANCE_KM = 10.0  # Group fires within 10km (fires can spread over large areas)
@@ -79,6 +87,68 @@ def load_fire_data():
         return df
     except Exception as e:
         print(f"Error loading data: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
+
+def fetch_live_data(days_back=1):
+    """
+    Fetch live fire data from NASA FIRMS API
+    
+    Args:
+        days_back (int): Number of days to fetch (1-10)
+        
+    Returns:
+        DataFrame: Live fire data
+    """
+    global _live_data_cache, _live_data_timestamp
+    
+    # Check cache (1 hour)
+    if _live_data_cache is not None and _live_data_timestamp is not None:
+        time_since_cache = (datetime.now() - _live_data_timestamp).total_seconds()
+        if time_since_cache < LIVE_CACHE_DURATION:
+            print(f"Using cached live data ({int(time_since_cache)}s old)")
+            return _live_data_cache.copy()
+    
+    try:
+        print(f"Fetching live data from NASA FIRMS API...")
+        
+        # Build API URL
+        url = NASA_API_URL.format(
+            map_key=NASA_API_KEY,
+            source='MODIS_NRT',
+            area='world',
+            day_range=days_back,
+            date=datetime.now().strftime('%Y-%m-%d')
+        )
+        
+        # Fetch data
+        response = requests.get(url, timeout=30)
+        
+        if response.status_code == 200:
+            # Parse CSV from response
+            from io import StringIO
+            df = pd.read_csv(StringIO(response.text))
+            
+            # Remove NaN
+            df = df.dropna()
+            
+            # Sort by date and time
+            df = df.sort_values(['acq_date', 'acq_time'])
+            
+            print(f"✅ Fetched {len(df)} live fire detections from NASA FIRMS")
+            
+            # Cache the data
+            _live_data_cache = df.copy()
+            _live_data_timestamp = datetime.now()
+            
+            return df
+        else:
+            print(f"Error fetching live data: HTTP {response.status_code}")
+            return None
+            
+    except Exception as e:
+        print(f"Error fetching live data: {e}")
         import traceback
         traceback.print_exc()
         return None
@@ -684,12 +754,71 @@ def analyze():
             'data': []
         }), 500
 
+@app.route('/analyze/live', methods=['GET'])
+def analyze_live():
+    """
+    API endpoint to analyze LIVE fire risk data from NASA FIRMS
+    
+    Returns:
+        JSON: List of live fire data points with risk classification
+    """
+    try:
+        # Fetch live data
+        df = fetch_live_data(days_back=1)
+        
+        if df is None or df.empty:
+            return jsonify({
+                'error': 'Unable to fetch live fire data',
+                'data': [],
+                'is_live': False
+            }), 500
+        
+        # Apply risk classification
+        df['risk'] = df['brightness'].apply(classify_risk)
+        
+        # Format date and time fields
+        df['date'] = df['acq_date'].astype(str)
+        df['time'] = df['acq_time'].astype(str).str.zfill(4)
+        
+        # Get unique dates
+        unique_dates = sorted(df['date'].unique())
+        
+        # Convert to list of dictionaries
+        fire_data = df.to_dict('records')
+        
+        # Add statistics
+        risk_counts = df['risk'].value_counts().to_dict()
+        
+        return jsonify({
+            'success': True,
+            'is_live': True,
+            'data_source': 'NASA FIRMS Real-Time API',
+            'fetched_at': datetime.now().isoformat(),
+            'total_points': len(fire_data),
+            'dates': unique_dates,
+            'current_date': unique_dates[-1] if unique_dates else None,
+            'statistics': {
+                'high_risk': risk_counts.get('High', 0),
+                'medium_risk': risk_counts.get('Medium', 0),
+                'low_risk': risk_counts.get('Low', 0)
+            },
+            'data': fire_data
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'error': str(e),
+            'data': [],
+            'is_live': False
+        }), 500
+
 @app.route('/health', methods=['GET'])
 def health():
     """Health check endpoint"""
     return jsonify({
         'status': 'healthy',
-        'csv_exists': os.path.exists(CSV_FILE)
+        'csv_exists': os.path.exists(CSV_FILE),
+        'api_key_configured': bool(NASA_API_KEY)
     })
 
 @app.route('/predict/tracking', methods=['GET'])
